@@ -3,19 +3,39 @@ import numpy
 import re
 from optparse import OptionParser
 
+'''
+from G_LDA_1 import *
+T = 10
+D = 300
+alpha = numpy.array([1.0] * D) / D
+K = numpy.array([1.0] * D)
+MU = numpy.array([0.0] * D)
+NU = numpy.array([1.0] * D)
+SIGMA = numpy.array([1.0] * D)
+
+wordvec_file = 'test_wordvec'
+corpus_file = 'test_corpus'
+iteration = 300	
+glad = GLDA(T, alpha, K, NU, MU, SIGMA, D)
+glad.load_wordvec(wordvec_file)
+glad.load_corpus(corpus_file)
+glad.set_corpus()
+'''
+
+
 def test():
 	#parser = OptionParse()
 	#parse.add_option()
-	T = 
-	alpha = 
-	K = 
-	MU = 
-	NU = 
-	SIGMA = 
-	D = 
+	T = 0
+	alpha = 0
+	K = 0
+	MU = 0
+	NU = 0
+	SIGMA = 0
+	D = 0
 	wordvec_file = ''
 	corpus_file = ''
-	iteration = 	
+	iteration = 300	
 
 	glda = GLDA(T, alpha, K, NU, MU, SIGMA, D)
 	glad.load_wordvec(wordvec_file)
@@ -50,7 +70,8 @@ class GLDA:
 		self.corpus = []
 		input = open(filename, 'r')
 		for line in input:
-			doc = re.findall( ''' some regulation for tweets or text ''', line.lower())	
+			doc = line.split() #for test use
+			#doc = re.findall(r'\[(.+?)\](.+)', line.lower())	
 			if len(doc) > 0:
 				self.corpus.append(doc)
 		input.close()		
@@ -58,16 +79,16 @@ class GLDA:
 
 	def load_wordvec(self, filename):
 		self.wordvec = {}
-		#let assume the file looks like: word : 1,2,3,4,5,...,300
+		#let assume the file looks like: "word 1 2 3 4 5 ... 300
 		input = open(filename, 'r')
-		line = input.readline()
+		line = input.readline().strip()
 		while line != '':
-			temp = line.split(':')
+			temp = line.split(' ')
 			word = temp[0]
-			lst = temp[1].split(',')
+			lst = temp[1 : len(temp)]
 			#convert string array to float array, store them in map
 			self.wordvec[word] = numpy.array(map(float, lst))
-			line = input.readline()
+			line = input.readline().strip()
 		input.close()
 
 		
@@ -84,7 +105,9 @@ class GLDA:
 		else:
 			voca_id = self.vocas_id[term]
 		return voca_id
-	
+
+
+
 	def set_corpus(self): #more like initialize
 		##self.vocas = []
 		self.vocas_id = {}
@@ -94,9 +117,9 @@ class GLDA:
 		#a document is represented by a vecotor;
 		#element in this vector is word id.
 		#also get rid of the word not included in wordvec 
-		temp = [[self.term_to_id(term) in doc] for doc in corpus]
-		self.docs = [[word_id in doc if word_id is not None] for doc in temp]
-		M = len(corpus)#number of documents
+		temp = [[self.term_to_id(term) for term in doc] for doc in self.corpus]
+		self.docs = [[word_id for word_id in doc if word_id != None] for doc in temp]
+		M = len(self.corpus)#number of documents
 		##V = len(self.vocas)#number of terms, not words
 		V = len(self.vocas_id)#number of terms, not words
 		self.z_m_n = []#topic assignment of each word in docs
@@ -108,7 +131,7 @@ class GLDA:
 		#m is m_th document, doc is the vectorized words of this document
 		for m, doc in zip(range(M), self.docs):
 			N_m = len(doc) #length of m_th document. doc is a N_m array, each element is a word id 
-			z_n = [numpy.random.multinomial(1, ([1.0] * T) / T).argmax() for x in range(N_m)]
+			z_n = [numpy.random.multinomial(1, numpy.array([1.0] * self.T) / self.T).argmax() for x in range(N_m)]
 			self.z_m_n.append(z_n)
 			#t is a word (word id is t), z is the topic this word is assigned to 
 			for t, z in zip(doc, z_n):
@@ -130,12 +153,12 @@ class GLDA:
 		variance = numpy.zeros((self.T, self.D), dtype = float)
 		for t in range(self.T):
 			#compute the average of each topic
-			for v in range(len(self.vocas)):
+			for v in range(len(self.vocas_id)):
 				times = self.n_z_t[t][v]
 				average[t] += self.wordvec[self.re_vocas_id[v]] * times #this word appears 'times' on this topic
 			average[t] = average[t] / self.n_z[t]
 			#compute the variance of each topic			
-			for v in range(len(self.vocas)):
+			for v in range(len(self.vocas_id)):
 				times = self.n_z_t[t][v]
 				variance[t] += (self.wordvec[self.re_vocas_id[v]] - average[t]) ** 2 * times
 		#step2 : compute mu and sigma
@@ -163,7 +186,7 @@ class GLDA:
 			scale_p = sigma[t] ** 0.5
 			#for each topic, there are D likelihoods
 			for d in range(self.D):
-				d_likelihood.append(scipy.stats.t.pdf(wordvec[self.re_vocas_id[word_id]][d], df = shape_p[d], loc = loc_p[d], scale = scale_p[d]))
+				d_likelihood.append(scipy.stats.t.pdf(self.wordvec[self.re_vocas_id[word_id]][d], df = shape_p[d], loc = loc_p[d], scale = scale_p[d]))
 			#step4 : compute the multiplication of all dimensions
 			#multiplication indicates the independence
 			likelihood[t] = numpy.prod(d_likelihood)
@@ -187,7 +210,7 @@ class GLDA:
 				#doesn't really need a denom
 				#gassian_likelihood is the only difference from original
 				#we are considering make it two gassian later.
-				p_z = gassian_likelihood(t) * (self.n_m_z[m] + self.alpha)
+				p_z = self.gassian_likelihood(t) * (self.n_m_z[m] + self.alpha)
 				new_z = numpy.random.multinomial(1, p_z / p_z.sum()).argmax()
 				self.z_m_n[m][n] = new_z
 				self.n_m_z[m, new_z] += 1
