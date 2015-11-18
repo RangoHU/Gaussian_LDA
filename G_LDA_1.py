@@ -3,15 +3,17 @@ import numpy
 import re
 from math import *
 from optparse import OptionParser
-from scipy.special import gammaln
+from scipy.special import gammaln as gamln
+from scipy.spatial.distance import cosine
+
 '''
 from G_LDA_1 import *
 T = 10
 D = 300
 alpha = numpy.array([1.0] * T) / T
-K = numpy.array([1.0] * D)
+K = 1.0
 MU = numpy.array([0.0] * D)
-NU = numpy.array([1.0] * D)
+NU = 1.0
 SIGMA = numpy.array([1.0] * D)
 
 wordvec_file = 'test_wordvec'
@@ -23,6 +25,15 @@ glad.load_corpus(corpus_file)
 glad.set_corpus()
 
 glad.inference()
+
+lst = []
+for i in range(len(glad.word_id)):
+	print i
+	lst.append(cosine(x, glad.wordvec[i]))
+
+
+
+s = sorted(range(len(lst)),key=lambda x:lst[x], reverse = True)
 '''
 
 
@@ -67,6 +78,7 @@ class GLDA:
 	def load_corpus(self, filename):
 		self.corpus = []
 		input = open(filename, 'r')
+		line = input.readline()
 		for line in input:
 			doc = line.split() #for test use
 			#doc = re.findall(r'\[(.+?)\](.+)', line.lower())	
@@ -78,13 +90,17 @@ class GLDA:
 	def load_wordvec(self, filename):
 		word_vec = []
 		self.word_id = {}
+		self.id_word = {}
 		input = open(filename, 'r')
+		line = input.readline().strip()
 		while line != '':
 			temp = line.split(' ')
 			word = temp[0]
 			lst = temp[1 : len(temp)]
 			word_vec.append(map(float, lst))
-			self.word_id[word] = len(self.word_id)
+			index = len(self.word_id)
+			self.word_id[word] = index
+			self.id_word[index] = word
 			line = input.readline().strip()
 		input.close()
 		self.wordvec = numpy.array(word_vec)		
@@ -112,7 +128,7 @@ class GLDA:
 		self.nu = []
 		self.kappa = []
 		for i in range(self.T):
-			mu, sigma, kappa, nu = update_topic(i)
+			mu, sigma, kappa, nu = self.update_topic(i)
 			self.mu.append(mu)
 			self.sigma.append(sigma)
 			self.kappa.append(kappa)
@@ -138,7 +154,7 @@ class GLDA:
 
 
 
-	def student_t(self, i):
+	def student_t(self, x, i):
 		mu = self.mu[i]
 		sigma = self.sigma[i]
 		kappa = self.kappa[i]
@@ -152,7 +168,7 @@ class GLDA:
 	def gassian_likelihood(self, x):
 		results = []
 		for i in range(self.T):
-			results.append(student_t(x, i))
+			results.append(self.student_t(x, i))
 		return numpy.array(results)
 
 
@@ -168,11 +184,19 @@ class GLDA:
 				self.n_m_z[m, z] -= 1
 				self.n_z_t[z, t] -= 1
 				self.n_z[z] -= 1
-				update_topic(z)
+				mu, sigma, kappa, nu = self.update_topic(z)
+				self.mu[z] = mu
+				self.sigma[z] = sigma
+				self.kappa[z] = kappa
+				self.nu[z] = nu
 				p_z = self.gassian_likelihood(t) * (self.n_m_z[m] + self.alpha)
 				new_z = numpy.random.multinomial(1, p_z / p_z.sum()).argmax()
 				self.z_m_n[m][n] = new_z
-				update_topic(new_z)
+				mu, sigma, kappa, nu = self.update_topic(new_z)
+				self.mu[new_z] = mu
+				self.sigma[new_z] = sigma
+				self.kappa[new_z] = kappa
+				self.nu[new_z] = nu
 				self.n_m_z[m, new_z] += 1
 				self.n_z_t[new_z, t] += 1
 				self.n_z[new_z] += 1
