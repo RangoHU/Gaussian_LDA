@@ -3,7 +3,7 @@ import numpy
 import re
 from math import *
 from optparse import OptionParser
-
+from scipy.special import gammaln
 '''
 from G_LDA_1 import *
 T = 10
@@ -81,50 +81,32 @@ class GLDA:
 
 
 	def load_wordvec(self, filename):
-		self.wordvec = {}
-		#let assume the file looks like: "word 1 2 3 4 5 ... 300
+		word_vec = {}
+		self.word_id = {}
 		input = open(filename, 'r')
-		line = input.readline().strip()
+		#assume the file looks like: "word 1 2 3 4 5 ... 300
 		while line != '':
 			temp = line.split(' ')
 			word = temp[0]
 			lst = temp[1 : len(temp)]
-			#convert string array to float array, store them in map
-			self.wordvec[word] = numpy.array(map(float, lst))
+			#convert string array to float array, store them in dictionary
+			word_vec.append(map(float, lst))
+			#the row number of a word vector is it's id in the dictionary
+			self.word_id[word] = len(self.word_id)
 			line = input.readline().strip()
 		input.close()
-
-		
-
-
-	def term_to_id(self, term):
-		if term not in self.wordvec:
-			return None
-		if term not in self.vocas_id:
-			voca_id = len(self.vocas_id)
-			self.vocas_id[term] = voca_id
-			self.re_vocas_id[voca_id] = term
-			##self.vocas.append(term)# don't see the function of this sentence here
-		else:
-			voca_id = self.vocas_id[term]
-		return voca_id
+		self.wordvec = numpy.array(word_vec)		
+	
 
 
-
-	def set_corpus(self): #more like initialize
-		##self.vocas = []
-		self.vocas_id = {}
-		self.re_vocas_id = {}
+	def set_corpus(self):
 		#self.docs is a 2-D array;
 		#each row is a document;
 		#a document is represented by a vecotor;
 		#element in this vector is word id.
-		#also get rid of the word not included in wordvec 
-		temp = [[self.term_to_id(term) for term in doc] for doc in self.corpus]
-		self.docs = [[word_id for word_id in doc if word_id != None] for doc in temp]
+		self.docs = [[self.word_id[term] for term in doc if term in self.word_id] for doc in self.corpus]
 		M = len(self.corpus)#number of documents
-		##V = len(self.vocas)#number of terms, not words
-		V = len(self.vocas_id)#number of terms, not words
+		V = len(self.word_id)#number of terms, not words
 		self.z_m_n = []#topic assignment of each word in docs
 		#in a document, how many words are assigned to a topic
 		self.n_m_z = numpy.zeros((M, self.T), dtype = int) #document topic dist.
@@ -144,23 +126,75 @@ class GLDA:
 				self.n_z_t[z, t] += 1
 				#number of words assinged to topic z plus one 
 				self.n_z[z] += 1
+		self.mu = []
+		self.sigma = []
+		self.nu = []
+		self.kappa = []
+		for i in range(self.T):
+			mu, sigma, kappa, nu = update_topic(i)
+			self.mu.append(mu)
+			self.sigma.append(sigma)
+			self.kappa.append(kappa)
+			self.nu.append(nu)
+		self.mu = numpy.array(self.mu)
+		self.sigma = numpy.array(self.sigma)
+		self.nu = numpy.array(self.nu)
+		self.kappa = numpy.array(self.kappa)
+
+	
+	#for the topic t, calculate the mu and sigma for it
+	def update_topic(self, t):
+		times = self.n_z_t[t][self.n_z_t[t] > 0]
+		word_vec = self.wordvec[self.n_z_t[t] > 0]
+		summary = numpy.dot(times, word_vec)
+		total_time = times.sum()
+		average = summary / total_time
+		variance = numpy.dot(times, (word_vec - average) ** 2)
+		kappa = self.Kappa + total_time
+		nu = self.Nu + total_time
+		mu = (self.Kappa * self.Mu + summary) / kappa
+		sigma = (self.Nu * (self.Sigma ** 2) + variance + total_time * self.Kappa / (self.Kappa + total_time) * (self.Mu - average)) * (nu ** (-0.5))
+		return mu, sigma, kappa, nu
 
 
 
-	def multivariate_t_distribution(self, x, mu, sigma, nu, d):
-		#num = gamma((nu + d + 0.0) / 2)
-		num = 1
-		sigma_inve = numpy.diag(1./sigma)
-		sigma_det = numpy.prod(sigma)
-		print pow(nu * pi,1. * d/2)
-		print (sigma_det ** 0.5)
-		print numpy.dot((x - mu), sigma_inve)
-		print numpy.dot(numpy.dot((x - mu), sigma_inve), (x - mu))
+	def student_t(self, x, mu, sigma, kappa, nu):
+		first_part = exp(gamln((nu + 1) / 2) - gamln(nu / 2)) / sqrt(nu * pi)
+		temp = (1 + ((x - mu) ** 2) / (sigma * nu)) ** 2	
+		second_part = numpy.prod(temp)
+		return first_part * second_part
 
-		print  ( (1 + (1./nu) * numpy.dot(numpy.dot((x - mu), sigma_inve), (x - mu))) ** (1. * (d + nu)/2) )
-		denon = pow(nu * pi,1. * d/2) * (sigma_det ** 0.5) * ( (1 + (1./nu) * numpy.dot(numpy.dot((x - mu), sigma_inve), (x - mu))) ** (1. * (d + nu)/2) )
-		d = 1. * num / denom 
-		return d
+	def gassian_likelihood(self, x):
+		results = []
+		for i in range(self.T):
+			results.append(student_t(x, self.mu[i], self.sigma[i], self.kappa[i], self.nu[i]))
+		return numpy.array(results)
+
+	def inference(self):
+		##V = len(self.vocas)
+		V = len(self.vocas_id)
+		#m is id of document, doc is the m_th document's words
+		for m, doc in zip(range(len(self.docs)), self.docs):
+			print 'now is processing ', m, ' th doc'
+			print 'length of this document is ', len(doc) 
+			#iterate all the word in this document
+			for n in range(len(doc)):
+				print 'now is processing', m, ' th doc', n, ' th word of ', len(doc) 
+				#t is the id of current word
+				t = doc[n]
+				z = self.z_m_n[m][n]
+				self.n_m_z[m, z] -= 1
+				self.n_z_t[z, t] -= 1
+				self.n_z[z] -= 1
+				update_topic(z)
+				p_z = self.gassian_likelihood(t) * (self.n_m_z[m] + self.alpha)
+				new_z = numpy.random.multinomial(1, p_z / p_z.sum()).argmax()
+				self.z_m_n[m][n] = new_z
+				update_topic(new_z)
+				self.n_m_z[m, new_z] += 1
+				self.n_z_t[new_z, t] += 1
+				self.n_z[new_z] += 1
+
 
 
 	#deal with self.n_z_t, take the average of each row (each topic)
@@ -199,24 +233,6 @@ class GLDA:
 		#we have mu, K by D; sigma, K by D
 		#call scipy.stats.t.pdf to calculate the likelihood of each dimension of the word on each topic
 		likelihood = numpy.zeros(self.T)
-		'''
-		for t in range(self.T):
-			word = self.wordvec[self.re_vocas_id[word_id]]
-			nu = self.NU[0] + self.n_z[t] ###self NU was of D-dimensional thing
-			print 'word'
-			print word
-			print 'self.NU'
-			print self.NU
-			print 'nu'
-			print nu
-			print 'mu[t]'
-			print mu[t]
-			print 'sigma[t]'
-			print sigma[t]
-			#return (word, mu[t], (sigma[t] ** 0.5), nu, self.D)
-			likelihood[t] = self.multivariate_t_distribution(word, mu[t], (sigma[t] ** 0.5), nu, self.D)
-
-		'''
 		for t in range(self.T):
 			d_likelihood = []
 			shape_p = self.NU + self.n_z[t]
