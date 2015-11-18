@@ -1,13 +1,14 @@
 import scipy.stats
 import numpy
 import re
+from math import *
 from optparse import OptionParser
 
 '''
 from G_LDA_1 import *
 T = 10
 D = 300
-alpha = numpy.array([1.0] * D) / D
+alpha = numpy.array([1.0] * T) / T
 K = numpy.array([1.0] * D)
 MU = numpy.array([0.0] * D)
 NU = numpy.array([1.0] * D)
@@ -20,6 +21,8 @@ glad = GLDA(T, alpha, K, NU, MU, SIGMA, D)
 glad.load_wordvec(wordvec_file)
 glad.load_corpus(corpus_file)
 glad.set_corpus()
+
+glad.inference()
 '''
 
 
@@ -143,6 +146,23 @@ class GLDA:
 				self.n_z[z] += 1
 
 
+
+	def multivariate_t_distribution(self, x, mu, sigma, nu, d):
+		#num = gamma((nu + d + 0.0) / 2)
+		num = 1
+		sigma_inve = numpy.diag(1./sigma)
+		sigma_det = numpy.prod(sigma)
+		print pow(nu * pi,1. * d/2)
+		print (sigma_det ** 0.5)
+		print numpy.dot((x - mu), sigma_inve)
+		print numpy.dot(numpy.dot((x - mu), sigma_inve), (x - mu))
+
+		print  ( (1 + (1./nu) * numpy.dot(numpy.dot((x - mu), sigma_inve), (x - mu))) ** (1. * (d + nu)/2) )
+		denon = pow(nu * pi,1. * d/2) * (sigma_det ** 0.5) * ( (1 + (1./nu) * numpy.dot(numpy.dot((x - mu), sigma_inve), (x - mu))) ** (1. * (d + nu)/2) )
+		d = 1. * num / denom 
+		return d
+
+
 	#deal with self.n_z_t, take the average of each row (each topic)
 	#for word_id, its word vector is word_vector[word_id]
 	def gassian_likelihood(self, word_id):
@@ -179,6 +199,24 @@ class GLDA:
 		#we have mu, K by D; sigma, K by D
 		#call scipy.stats.t.pdf to calculate the likelihood of each dimension of the word on each topic
 		likelihood = numpy.zeros(self.T)
+		'''
+		for t in range(self.T):
+			word = self.wordvec[self.re_vocas_id[word_id]]
+			nu = self.NU[0] + self.n_z[t] ###self NU was of D-dimensional thing
+			print 'word'
+			print word
+			print 'self.NU'
+			print self.NU
+			print 'nu'
+			print nu
+			print 'mu[t]'
+			print mu[t]
+			print 'sigma[t]'
+			print sigma[t]
+			#return (word, mu[t], (sigma[t] ** 0.5), nu, self.D)
+			likelihood[t] = self.multivariate_t_distribution(word, mu[t], (sigma[t] ** 0.5), nu, self.D)
+
+		'''
 		for t in range(self.T):
 			d_likelihood = []
 			shape_p = self.NU + self.n_z[t]
@@ -194,13 +232,18 @@ class GLDA:
 
 
 
+
+
 	def inference(self):
 		##V = len(self.vocas)
 		V = len(self.vocas_id)
 		#m is id of document, doc is the m_th document's words
 		for m, doc in zip(range(len(self.docs)), self.docs):
+			print 'now is processing ', m, ' th doc'
+			print 'length of this document is ', len(doc) 
 			#iterate all the word in this document
 			for n in range(len(doc)):
+				print 'now is processing', m, ' th doc', n, ' th word of ', len(doc) 
 				#t is the id of current word
 				t = doc[n]
 				z = self.z_m_n[m][n]
