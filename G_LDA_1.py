@@ -26,10 +26,12 @@ glad.set_corpus()
 
 glad.inference()
 
+print glad.n_m_z
+
 lst = []
 for i in range(len(glad.word_id)):
 	print i
-	lst.append(cosine(x, glad.wordvec[i]))
+	lst.append(cosine(mu, glad.wordvec[i]))
 
 
 
@@ -159,17 +161,26 @@ class GLDA:
 		sigma = self.sigma[i]
 		kappa = self.kappa[i]
 		nu = self.nu[i]
+		'''
 		first_part = (exp(gamln((nu + 1) / 2) - gamln(nu / 2)) / sqrt(nu * pi)) ** self.D
 		temp = (1 + ((x - mu) ** 2) / (sigma * nu)) ** 2	
 		second_part = numpy.prod(temp)
 		return first_part * second_part
-
+		'''
+		first_part = self.D * (gamln((nu + 1) / 2) - gamln(nu / 2) - log(nu * pi) / 2)
+		temp = numpy.log(1 + ((x - mu) ** 2) / (sigma * nu)) * 2
+		second_part = temp.sum()
+		
+		return first_part + second_part
 
 	def gassian_likelihood(self, x):
 		results = []
 		for i in range(self.T):
 			results.append(self.student_t(x, i))
-		return numpy.array(results)
+		temp = numpy.array(results)
+		temp = temp - temp.max()
+		likelihood = numpy.exp(temp)
+		return likelihood
 
 
 	def inference(self):
@@ -178,7 +189,7 @@ class GLDA:
 			print 'now is processing ', m, ' th doc'
 			print 'length of this document is ', len(doc) 
 			for n in range(len(doc)):
-				print 'now is processing', m, ' th doc', n, ' th word of ', len(doc) 
+				#print 'now is processing', m, ' th doc', n, ' th word of ', len(doc) 
 				t = doc[n]
 				z = self.z_m_n[m][n]
 				self.n_m_z[m, z] -= 1
@@ -189,17 +200,21 @@ class GLDA:
 				self.sigma[z] = sigma
 				self.kappa[z] = kappa
 				self.nu[z] = nu
-				p_z = self.gassian_likelihood(t) * (self.n_m_z[m] + self.alpha)
+
+				temp = self.gassian_likelihood(t) 
+				#print temp
+				p_z = temp * (self.n_m_z[m] + self.alpha)
 				new_z = numpy.random.multinomial(1, p_z / p_z.sum()).argmax()
-				self.z_m_n[m][n] = new_z
+
+				self.z_m_n[m][n] = new_z				
+				self.n_m_z[m, new_z] += 1
+				self.n_z_t[new_z, t] += 1
+				self.n_z[new_z] += 1
 				mu, sigma, kappa, nu = self.update_topic(new_z)
 				self.mu[new_z] = mu
 				self.sigma[new_z] = sigma
 				self.kappa[new_z] = kappa
 				self.nu[new_z] = nu
-				self.n_m_z[m, new_z] += 1
-				self.n_z_t[new_z, t] += 1
-				self.n_z[new_z] += 1
 
 
 	
