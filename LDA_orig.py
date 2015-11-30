@@ -16,9 +16,9 @@ corpus_file = 'summary_doc'
 #corpus_file = 'test_corpus_3'
 #corpus_file = 'test_corpus'
 
-glad = GLDA(10, 0.1, 0)
+glad = GLDA(10, 0.001, 0.001)
 glad.load_corpus(corpus_file)
-glad.word2id(n = 10)
+glad.word2id(n = 5)
 glad.set_corpus()
 
 for i in range(10):
@@ -26,9 +26,8 @@ for i in range(10):
 	#print '================================'
         #print i
         glad.inference()
-	print glad.n_m_z
-
-
+	#print glad.n_m_z
+	print i
 '''
 
 class GLDA:
@@ -38,6 +37,7 @@ class GLDA:
 		self.beta = beta
 		self.prob = numpy.array([1.0] * self.T) / self.T
 		self.docs = []
+		self.smooth = numpy.array([0.1] * self.T)
 		warnings.filterwarnings('error')
 
 	def load_corpus(self, filename):
@@ -46,19 +46,9 @@ class GLDA:
 		for line in input:
 			line = line.strip().lower()
 			doc = line.split()
-			if len(doc) > 0:
+			if len(doc) > 10:
 				self.corpus.append(doc)
 		input.close()		
-
-
-	def term_to_id(self, term):
-		if term not in self.vocas_id:
-			v_id = len(self.vocas_id)
-			self.vocas_id[term] = v_id
-			self.re_vocas_id[v_id] = term
-		else:
-			v_id = self.vocas_id[term]
-		return v_id
 
 
 	def word2id(self, n = 5):
@@ -81,14 +71,14 @@ class GLDA:
 
 
         def set_corpus(self):
-		#self.vocas_id = {}
-		#self.re_vocas_id = {}
-		#self.docs = [[self.term_to_id(term) for term in doc] for doc in self.corpus]
+		counter = 0
 		temp = [[self.vocas_id[term] for term in doc if term in self.vocas_id] for doc in self.corpus]
 		for each in temp:
-			if len(each) > 2:
+			if len(each) > 50:
 				self.docs.append(each)
-	
+			else:
+				counter += 1
+		print counter
                 M = len(self.docs)
                 V = len(self.vocas_id)
                 self.z_m_n = []
@@ -97,8 +87,6 @@ class GLDA:
                 self.n_z = numpy.zeros(self.T, dtype = float)
                 for m, doc in zip(range(M), self.docs):
                         N_m = len(doc)
-			if N_m < 2:
-				continue
                         z_n = [numpy.random.multinomial(1, numpy.array([1.0] * self.T) / self.T).argmax() for x in range(N_m)]
                         self.z_m_n.append(z_n)
 			temp = [0.0] * self.T
@@ -120,9 +108,8 @@ class GLDA:
                                 self.n_z_t[z, t] -= 1
                                 #self.n_z[z] -= 1
 				self.n_z_beta[z] -= 1
-
-				##########################################
-				p_z = (self.n_z_t[:, t]) /(self.n_z_beta)* (self.n_m_z[m])
+				
+				p_z = (self.n_z_t[:, t] + self.beta) /(self.n_z_beta) * (self.n_m_z[m] + self.alpha)
 				try:
 					prob = p_z / p_z.sum()
 				except Warning:
@@ -132,13 +119,9 @@ class GLDA:
 					print self.n_m_z[m]
 					print 't = ', t
 					print 'm = ', m
-					#continue
+					print '==============================='
 					prob = self.prob
-					return self.n_z_t[:, t], self.n_z_beta, self.n_m_z[m]
-				#print '##########################################'
-				#print p_z
-				#print '##########################################'
-				##########################################
+	
 		
 				new_z = numpy.random.multinomial(1, prob).argmax()
                                 self.z_m_n[m][n] = new_z
