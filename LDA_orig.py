@@ -18,16 +18,19 @@ corpus_file = 'summary_doc'
 
 glad = GLDA(10, 0.001, 0.001)
 glad.load_corpus(corpus_file)
-glad.word2id(n = 5)
+glad.word2id(n = 10)
 glad.set_corpus()
 
-for i in range(10):
+for i in range(30):
 	print datetime.datetime.now()
 	#print '================================'
         #print i
         glad.inference()
 	#print glad.n_m_z
 	print i
+
+
+
 '''
 
 class GLDA:
@@ -39,6 +42,12 @@ class GLDA:
 		self.docs = []
 		self.smooth = numpy.array([0.1] * self.T)
 		warnings.filterwarnings('error')
+		templist = [words for words in (line.strip().lower().split() for line in open('my_stopwords.txt'))]
+		self.stoplist = set()
+		for each in templist:
+			for word in each:
+				self.stoplist.add(word)
+
 
 	def load_corpus(self, filename):
 		self.corpus = []
@@ -62,7 +71,7 @@ class GLDA:
 				else:
 					self.temp[word] += 1
 		for each in self.temp:
-			if self.temp[each] > n:
+			if self.temp[each] > n and each not in self.stoplist:
 				word = each
 				index = len(self.vocas_id)
 				self.vocas_id[word] = index
@@ -89,51 +98,42 @@ class GLDA:
                         N_m = len(doc)
                         z_n = [numpy.random.multinomial(1, numpy.array([1.0] * self.T) / self.T).argmax() for x in range(N_m)]
                         self.z_m_n.append(z_n)
-			temp = [0.0] * self.T
                         for t, z in zip(doc, z_n):
                                 self.n_m_z[m, z] += 1
                                 self.n_z_t[z, t] += 1
                                 self.n_z[z] += 1
-		self.n_z_beta = self.n_z + V * self.beta
 
 
-        def inference(self):
-                V = len(self.vocas_id)
+
+
+
+	def inference(self):
+		V = len(self.vocas_id)
 		M = len(self.n_m_z)
-                for m, doc in zip(range(M), self.docs):
-                        for n in range(len(doc)):
-                                t = doc[n]
-                                z = self.z_m_n[m][n]
-                                self.n_m_z[m, z] -= 1
-                                self.n_z_t[z, t] -= 1
-                                #self.n_z[z] -= 1
-				self.n_z_beta[z] -= 1
+		for m, doc in zip(range(M), self.docs):
+			for n in range(len(doc)):
+				t = doc[n]
+				z = self.z_m_n[m][n]
 				
-				p_z = (self.n_z_t[:, t] + self.beta) /(self.n_z_beta) * (self.n_m_z[m] + self.alpha)
-				try:
-					prob = p_z / p_z.sum()
-				except Warning:
-					print p_z
-					print self.n_z_t[:, t]
-					print self.n_z_beta
-					print self.n_m_z[m]
-					print 't = ', t
-					print 'm = ', m
-					print '==============================='
-					prob = self.prob
-	
-		
+				self.n_m_z[m, z] -= 1
+				self.n_z_t[z, t] -= 1
+				self.n_z[z] -= 1
+				
+				p_z = (self.n_z_t[:, t] + self.beta) / (self.n_z + self.beta * V) * (self.n_m_z[m] + self.alpha)
+				prob = p_z / p_z.sum()
 				new_z = numpy.random.multinomial(1, prob).argmax()
+
                                 self.z_m_n[m][n] = new_z
                                 self.n_m_z[m, new_z] += 1
                                 self.n_z_t[new_z, t] += 1
-                                #self.n_z[new_z] += 1
-				self.n_z_beta[new_z] += 1
+                                self.n_z[new_z] += 1
+
 
 
 	def phi(self):
 		V = len(self.vocas_id)
-		return (self.n_z_t + self.beta) / self.n_z_beta[:, numpy.newaxis] #(self.n_z[:, numpy.newaxis] + V * self.beta)
+		return (self.n_z_t + self.beta) / (self.n_z[:, numpy.newaxis] +  V * self.beta)
+
 
 	def theta(self):
 		return (self.n_m_z + self.alpha) / (self.n_m_z.sum(axis = 1)[:, numpy.newaxis] + self.T * self.alpha)
@@ -144,11 +144,10 @@ class GLDA:
 		dist = self.phi()
 		for i in range(self.T):
 			s = dist[i]
-			index = sorted(range(len(s)), key=lambda k: s[k])
+			index = sorted(range(len(s)), key=lambda k: s[k], reverse = True)
 			string = ''
 			for j in range(n):
 				string += self.re_vocas_id[index[j]] + '  '
-				#string += self.re_vocas_id[index[j]] + '*' + str(s[index[j]]) + '  '
 			print string
 	
 
