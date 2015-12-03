@@ -1,13 +1,16 @@
 import scipy.stats
 import numpy
 import re
+import json
 from math import *
 from optparse import OptionParser
 from scipy.special import gammaln as gamln
 from scipy.spatial.distance import cosine
 from scipy.spatial.distance import *
-
+import datetime
 '''
+
+
 from G_LDA_1 import *
 T = 10
 D = 300
@@ -17,15 +20,16 @@ MU = numpy.array([0.0] * D)
 NU = 1.0
 SIGMA = numpy.array([1.0] * D)
 
-wordvec_file = 'test_wordvec'
-corpus_file = 'test_corpus'
-iteration = 300	
+wordvec_file = 'toy_word2vec'
+corpus_file = 'summary_doc'
 glad = GLDA(T, alpha, K, NU, MU, SIGMA, D)
 glad.load_wordvec(wordvec_file)
 glad.load_corpus(corpus_file)
 glad.set_corpus()
 
-for i in range(50):
+
+for i in range(10):
+	print datetime.datetime.now()
 	print i
 	glad.inference()
 
@@ -63,22 +67,21 @@ class GLDA:
 	#TODO: better find a reasonable word set
 	#
 	def load_wordvec(self, filename):
+		input = open(filename, 'r')
+		line = input.readline()
+		temp = json.loads(line)
+		index = 0
 		word_vec = []
 		self.word_id = {}
 		self.id_word = {}
-		input = open(filename, 'r')
-		line = input.readline().strip()
-		while line != '':
-			temp = line.split(' ')
-			word = temp[0].lower()
-			lst = temp[1 : len(temp)]
-			word_vec.append(map(float, lst))
-			index = len(self.word_id)
-			self.word_id[word] = index
-			self.id_word[index] = word
-			line = input.readline().strip()
+		for each in temp:
+			self.word_id[each] = index
+			self.id_word[index] = each
+			word_vec.append(temp[each])
+			index += 1
 		input.close()
 		self.wordvec = numpy.array(word_vec)		
+
 
 
 	def load_corpus(self, filename):
@@ -93,6 +96,8 @@ class GLDA:
 
 
 
+
+
         def set_corpus(self):
 		counter = 0
 		temp = [[self.word_id[term] for term in doc if term in self.word_id] for doc in self.corpus]
@@ -103,7 +108,7 @@ class GLDA:
 				counter += 1
 		print counter
                 M = len(self.docs)
-                V = len(self.vocas_id)
+                V = len(self.word_id)
                 self.z_m_n = []
                 self.n_m_z = numpy.zeros((M, self.T), dtype = float)
 		self.n_z_t = numpy.zeros((self.T, V), dtype = float)
@@ -135,6 +140,8 @@ class GLDA:
 		self.kappa = numpy.array(self.kappa)
 
 
+
+
 	'''
 	calculate the mu, sigma, kappa, nu of a topic
 	'''
@@ -158,6 +165,60 @@ class GLDA:
 			total_time * self.Kappa / (self.Kappa + total_time) * (self.Mu - average)) ** 2 
 
 		return mu, sigma, kappa, nu
+
+
+
+	def subtract_update_topic(self, z, t):
+		'''
+		TODO: self.Mu is usually set to be zero!
+		'''
+
+		vec = self.wordvec[t]
+
+		summary = self.summary[z]
+		variance = self.variance[z]
+		average = self.average[z]
+		kappa = self.kappa[z]
+		nu = self.nu[z]
+		mu = self.mu[z]
+		sigma = self.sigma[z]
+		total_time = self.n_z[z]
+
+
+		new_summary = summary - vec
+		new_average = new_summary / total_time
+		#TODO
+		new_variance = variance +/- somthing
+		new_nu = nu - 1
+		new_kappa = kappa - 1
+		
+		new_mu = #TODO
+		new_sigma = #TODO
+		
+		#TODO
+		return new_mu, new_sigma, new_average, new_nu, new_kappa
+
+		
+
+		times = self.n_z_t[z][self.n_z_t[z] > 0]
+		word_vec = self.wordvec[self.n_z_t[z] > 0]
+		summary = numpy.dot(times, word_vec)
+		#total_time = times.sum()
+		total_time = self.n_z[z]
+		average = summary / total_time
+		variance = numpy.dot(times, (word_vec - average) ** 2)
+		kappa = self.Kappa + total_time
+		nu = self.Nu + total_time
+		mu = (self.Kappa * self.Mu + summary) / kappa
+
+		sigma = (1 + kappa) / (nu * kappa) * \
+			(self.Nu * (self.Sigma ** 2) + variance + \
+			total_time * self.Kappa / (self.Kappa + total_time) * (self.Mu - average)) ** 2 
+
+		return mu, sigma, kappa, nu
+
+
+
 
 
 	#give topic i, word x, calculate the 
@@ -190,6 +251,7 @@ class GLDA:
 	def inference(self):
 		V = len(self.word_id)
 		for m, doc in zip(range(len(self.docs)), self.docs):
+			print 'document ', m, ' out of', len(self.docs)
 			for n in range(len(doc)):
 				t = doc[n]
 				z = self.z_m_n[m][n]
@@ -206,27 +268,27 @@ class GLDA:
 				'''
 				TODO: do we have to update each topic in this way?
 				'''
-
+				print datetime.datetime.now()
 				mu, sigma, kappa, nu = self.update_topic(z)
 				self.mu[z] = mu
 				self.sigma[z] = sigma
 				self.kappa[z] = kappa
 				self.nu[z] = nu
-
+				print datetime.datetime.now()
 				word_topic = self.gassian_likelihood(t)
 				topic_document =  self.n_m_z[m] + self.alpha
 				p_z = word_topic * topic_document
 				new_z = numpy.random.multinomial(1, p_z / p_z.sum()).argmax()
-
+				print datetime.datetime.now()
 				self.z_m_n[m][n] = new_z				
 				self.n_m_z[m, new_z] += 1
 				self.n_z_t[new_z, t] += 1
 				self.n_z[new_z] += 1
-
+				print datetime.datetime.now()
 				mu, sigma, kappa, nu = self.update_topic(new_z)
 				self.mu[new_z] = mu
 				self.sigma[new_z] = sigma
 				self.kappa[new_z] = kappa
 				self.nu[new_z] = nu
-
-			
+				print datetime.datetime.now()
+				return
