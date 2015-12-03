@@ -128,27 +128,29 @@ class GLDA:
 		self.sigma = []
 		self.nu = []
 		self.kappa = []
+		self.summary = []
+		self.variance = []
+		self.average = []
 		for i in range(self.T):
-			mu, sigma, kappa, nu = self.update_topic(i)
+			mu, sigma, kappa, nu, summary, variance, average = self.update_topic(i)
 			self.mu.append(mu)
 			self.sigma.append(sigma)
 			self.kappa.append(kappa)
 			self.nu.append(nu)
+			self.summary.append(summary)
+			self.variance.append(variance)
+			self.average.append(average)
 		self.mu = numpy.array(self.mu)
 		self.sigma = numpy.array(self.sigma)
 		self.nu = numpy.array(self.nu)
 		self.kappa = numpy.array(self.kappa)
+		self.summary = numpy.array(self.summary)
+		self.variance = numpy.array(self.variance)
+		self.average = numpy.array(self.average)
 
 
-
-
-	'''
-	calculate the mu, sigma, kappa, nu of a topic
-	'''
 	def update_topic(self, z):
-		'''
-		TODO: self.Mu is usually set to be zero!
-		'''
+
 		times = self.n_z_t[z][self.n_z_t[z] > 0]
 		word_vec = self.wordvec[self.n_z_t[z] > 0]
 		summary = numpy.dot(times, word_vec)
@@ -164,15 +166,23 @@ class GLDA:
 			(self.Nu * (self.Sigma ** 2) + variance + \
 			total_time * self.Kappa / (self.Kappa + total_time) * (self.Mu - average)) ** 2 
 
-		return mu, sigma, kappa, nu
+		return mu, sigma, kappa, nu, summary, variance, average
 
 
+	'''
+	TODO: self.Mu is usually set to be zero!
+	'''
+	def cal_mu(self, kappa, summary):
+		return (self.Kappa * self.Mu + summary) / kappa
 
-	def subtract_update_topic(self, z, t):
-		'''
-		TODO: self.Mu is usually set to be zero!
-		'''
 
+	def cal_sigma(self, kappa, nu, variance, total_time, average):
+		return 	(1 + kappa) / (nu * kappa) * \
+			(self.Nu * (self.Sigma ** 2) + variance + \
+			total_time * self.Kappa / (self.Kappa + total_time) * (self.Mu - average)) ** 2 
+
+
+	def subtract_update_topic(self, z, t, flag):
 		vec = self.wordvec[t]
 
 		summary = self.summary[z]
@@ -184,41 +194,23 @@ class GLDA:
 		sigma = self.sigma[z]
 		total_time = self.n_z[z]
 
+		if flag == '-':
+			new_summary = summary - vec
+			new_average = new_summary / total_time
+			new_variance = variance - (vec - average) * (vec - new_average)
+			new_nu = nu - 1
+			new_kappa = kappa - 1
+		else:
+			new_summary = summary + vec
+			new_average = new_summary / total_time
+			new_variance = variance + (vec - average) * (vec - new_average)
+			new_nu = nu + 1
+			new_kappa = kappa + 1		
 
-		new_summary = summary - vec
-		new_average = new_summary / total_time
-		#TODO
-		new_variance = variance +/- somthing
-		new_nu = nu - 1
-		new_kappa = kappa - 1
+		new_mu = self.cal_mu(new_kappa, new_summary)
+		new_sigma = self.cal_sigma(new_kappa, new_nu, new_variance, total_time, new_average)
 		
-		new_mu = #TODO
-		new_sigma = #TODO
-		
-		#TODO
-		return new_mu, new_sigma, new_average, new_nu, new_kappa
-
-		
-
-		times = self.n_z_t[z][self.n_z_t[z] > 0]
-		word_vec = self.wordvec[self.n_z_t[z] > 0]
-		summary = numpy.dot(times, word_vec)
-		#total_time = times.sum()
-		total_time = self.n_z[z]
-		average = summary / total_time
-		variance = numpy.dot(times, (word_vec - average) ** 2)
-		kappa = self.Kappa + total_time
-		nu = self.Nu + total_time
-		mu = (self.Kappa * self.Mu + summary) / kappa
-
-		sigma = (1 + kappa) / (nu * kappa) * \
-			(self.Nu * (self.Sigma ** 2) + variance + \
-			total_time * self.Kappa / (self.Kappa + total_time) * (self.Mu - average)) ** 2 
-
-		return mu, sigma, kappa, nu
-
-
-
+		return new_mu, new_sigma, new_kappa, new_nu, new_summary, new_variance, new_average
 
 
 	#give topic i, word x, calculate the 
@@ -251,7 +243,7 @@ class GLDA:
 	def inference(self):
 		V = len(self.word_id)
 		for m, doc in zip(range(len(self.docs)), self.docs):
-			print 'document ', m, ' out of', len(self.docs)
+			#print 'document ', m, ' out of', len(self.docs)
 			for n in range(len(doc)):
 				t = doc[n]
 				z = self.z_m_n[m][n]
@@ -259,36 +251,56 @@ class GLDA:
 				self.n_z_t[z, t] -= 1
 				self.n_z[z] -= 1
 
-
 				'''
 				TODO: what's the chance of being assigned to the same topic?
 				'''
-
-
-				'''
-				TODO: do we have to update each topic in this way?
-				'''
-				print datetime.datetime.now()
-				mu, sigma, kappa, nu = self.update_topic(z)
+				#print datetime.datetime.now()
+				mu, sigma, kappa, nu, summary, variance, average = self.subtract_update_topic(z, t, '-')
 				self.mu[z] = mu
 				self.sigma[z] = sigma
 				self.kappa[z] = kappa
 				self.nu[z] = nu
-				print datetime.datetime.now()
+				self.summary[z] = summary
+				self.variance[z] = variance
+				self.average[z] = average
+
+				#print datetime.datetime.now()
+
 				word_topic = self.gassian_likelihood(t)
 				topic_document =  self.n_m_z[m] + self.alpha
 				p_z = word_topic * topic_document
 				new_z = numpy.random.multinomial(1, p_z / p_z.sum()).argmax()
-				print datetime.datetime.now()
+
+				#print datetime.datetime.now()
+
 				self.z_m_n[m][n] = new_z				
 				self.n_m_z[m, new_z] += 1
 				self.n_z_t[new_z, t] += 1
 				self.n_z[new_z] += 1
-				print datetime.datetime.now()
-				mu, sigma, kappa, nu = self.update_topic(new_z)
-				self.mu[new_z] = mu
-				self.sigma[new_z] = sigma
-				self.kappa[new_z] = kappa
-				self.nu[new_z] = nu
-				print datetime.datetime.now()
-				return
+
+				#print datetime.datetime.now()
+
+				mu, sigma, kappa, nu, summary, variance, average = self.subtract_update_topic(z, t, '+')
+				self.mu[z] = mu
+				self.sigma[z] = sigma
+				self.kappa[z] = kappa
+				self.nu[z] = nu
+				self.summary[z] = summary
+				self.variance[z] = variance
+				self.average[z] = average
+
+				#print datetime.datetime.now()
+
+				#return
+
+
+
+
+
+
+
+
+
+
+
+
