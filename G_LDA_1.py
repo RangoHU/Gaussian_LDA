@@ -219,7 +219,7 @@ class GLDA:
 		sigma = self.sigma[i]
 		kappa = self.kappa[i]
 		nu = self.nu[i]
-		first_part = self.D * (gamln((nu + 1) / 2) - gamln(nu / 2) - log(nu * pi) / 2)
+		first_part = self.D * (gamln((nu + 1) / 2) - gamln(nu / 2) - numpy.log(nu * pi) / 2)
 		#temp = numpy.log(1 + ((x - mu) ** 2) / (sigma * nu)) * 2 #incorrect
 		temp = numpy.log(1 + ((x - mu) ** 2) / (sigma * nu)) * (1 - nu) / 2
 		second_part = temp.sum()
@@ -238,6 +238,14 @@ class GLDA:
 		likelihood = numpy.exp(temp)
 		return likelihood
 
+
+
+	def new_gassian_likelihood(self, x):
+
+		first_part = self.D * (gamln((self.nu + 1) / 2) - gamln(self.nu / 2) - numpy.log(self.nu) / 2)
+		temp = numpy.log(1 + ((x - self.mu) ** 2) / (self.sigma * self.nu[:, numpy.newaxis])) * (1 - self.nu[:, numpy.newaxis]) / 2
+		second_part = temp.sum(axis = 1)
+		return first_part + second_part
 
 
 	def inference(self):
@@ -266,7 +274,8 @@ class GLDA:
 
 				#print datetime.datetime.now()
 
-				word_topic = self.gassian_likelihood(t)
+				#word_topic = self.gassian_likelihood(t)
+				word_topic = self.new_gassian_likelihood(t)
 				topic_document =  self.n_m_z[m] + self.alpha
 				p_z = word_topic * topic_document
 				new_z = numpy.random.multinomial(1, p_z / p_z.sum()).argmax()
@@ -290,8 +299,7 @@ class GLDA:
 				self.average[z] = average
 
 				#print datetime.datetime.now()
-
-				#return
+				#return 
 
 
 
