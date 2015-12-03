@@ -62,10 +62,6 @@ class GLDA:
 		self.Sigma = SIGMA
 		self.docs = []
 
-
-	#
-	#TODO: better find a reasonable word set
-	#
 	def load_wordvec(self, filename):
 		input = open(filename, 'r')
 		line = input.readline()
@@ -185,32 +181,29 @@ class GLDA:
 	def subtract_update_topic(self, z, t, flag):
 		vec = self.wordvec[t]
 
-		summary = self.summary[z]
-		variance = self.variance[z]
-		average = self.average[z]
-		kappa = self.kappa[z]
-		nu = self.nu[z]
-		mu = self.mu[z]
-		sigma = self.sigma[z]
 		total_time = self.n_z[z]
 
 		if flag == '-':
-			new_summary = summary - vec
-			new_average = new_summary / total_time
-			new_variance = variance - (vec - average) * (vec - new_average)
-			new_nu = nu - 1
-			new_kappa = kappa - 1
+			#new_summary = summary - vec
+			self.summary[z] -= vec
+			temp_average = self.average[z]
+			self.average[z] = self.summary[z] / total_time
+			self.variance[z] -= (vec - temp_average) * (vec - self.average[z])
+			self.nu[z] -= 1
+			self.kappa[z] -= 1
 		else:
-			new_summary = summary + vec
-			new_average = new_summary / total_time
-			new_variance = variance + (vec - average) * (vec - new_average)
-			new_nu = nu + 1
-			new_kappa = kappa + 1		
+                        #new_summary = summary - vec
+                        self.summary[z] += vec
+			temp_average = self.average[z]
+                        self.average[z] = self.summary[z] / total_time
+                        self.variance[z] += (vec - temp_average) * (vec - self.average[z])
+                        self.nu[z] += 1
+                        self.kappa[z] += 1
 
-		new_mu = self.cal_mu(new_kappa, new_summary)
-		new_sigma = self.cal_sigma(new_kappa, new_nu, new_variance, total_time, new_average)
+
+		self.mu[z] = self.cal_mu(self.kappa[z], self.summary[z])
+		self.sigma[z] = self.cal_sigma(self.kappa[z], self.nu[z], self.variance[z], total_time, self.average[z])
 		
-		return new_mu, new_sigma, new_kappa, new_nu, new_summary, new_variance, new_average
 
 
 	#give topic i, word x, calculate the 
@@ -245,7 +238,10 @@ class GLDA:
 		first_part = self.D * (gamln((self.nu + 1) / 2) - gamln(self.nu / 2) - numpy.log(self.nu) / 2)
 		temp = numpy.log(1 + ((x - self.mu) ** 2) / (self.sigma * self.nu[:, numpy.newaxis])) * (1 - self.nu[:, numpy.newaxis]) / 2
 		second_part = temp.sum(axis = 1)
-		return first_part + second_part
+		temp = first_part + second_part
+		temp -= temp.max()		
+		#likelihood = numpy.exp(temp)
+		return numpy.exp(temp)
 
 
 	def inference(self):
@@ -262,15 +258,9 @@ class GLDA:
 				'''
 				TODO: what's the chance of being assigned to the same topic?
 				'''
+				#print z
 				#print datetime.datetime.now()
-				mu, sigma, kappa, nu, summary, variance, average = self.subtract_update_topic(z, t, '-')
-				self.mu[z] = mu
-				self.sigma[z] = sigma
-				self.kappa[z] = kappa
-				self.nu[z] = nu
-				self.summary[z] = summary
-				self.variance[z] = variance
-				self.average[z] = average
+				self.subtract_update_topic(z, t, '-')
 
 				#print datetime.datetime.now()
 
@@ -280,26 +270,40 @@ class GLDA:
 				p_z = word_topic * topic_document
 				new_z = numpy.random.multinomial(1, p_z / p_z.sum()).argmax()
 
-				#print datetime.datetime.now()
-
-				self.z_m_n[m][n] = new_z				
-				self.n_m_z[m, new_z] += 1
-				self.n_z_t[new_z, t] += 1
-				self.n_z[new_z] += 1
 
 				#print datetime.datetime.now()
-
-				mu, sigma, kappa, nu, summary, variance, average = self.subtract_update_topic(z, t, '+')
-				self.mu[z] = mu
-				self.sigma[z] = sigma
-				self.kappa[z] = kappa
-				self.nu[z] = nu
-				self.summary[z] = summary
-				self.variance[z] = variance
-				self.average[z] = average
+				self.subtract_update_topic(new_z, t, '+')
 
 				#print datetime.datetime.now()
+				#print new_z
+				self.z_m_n[m][n] = new_z
+                                self.n_m_z[m, new_z] += 1
+                                self.n_z_t[new_z, t] += 1
+                                self.n_z[new_z] += 1
+
+
 				#return 
+
+        def phi(self):
+                #V = len(self.word_id)
+                #return (self.n_z_t + self.beta) / (self.n_z[:, numpy.newaxis] +  V * self.beta)
+		return self.n_z_t / self.n_z[:, numpy.newaxis]
+
+
+        def theta(self):
+                return (self.n_m_z + self.alpha) / (self.n_m_z.sum(axis = 1)[:, numpy.newaxis] + self.T * self.alpha)
+
+
+
+        def display_topic(self, n = 10):
+                dist = self.phi()
+                for i in range(self.T):
+                        s = dist[i]
+                        index = sorted(range(len(s)), key=lambda k: s[k], reverse = True)
+                        string = ''
+                        for j in range(n):
+                                string += self.id_word[index[j]] + '  '
+                        print string
 
 
 
