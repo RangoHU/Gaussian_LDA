@@ -36,23 +36,6 @@ for i in range(30):
 	print glad.n_m_z
 	glad.inference()
 
-
-print glad.n_m_z
-
-mu = glad.mu[8]
-
-lst = []
-for i in range(len(glad.word_id)):
-	print i
-	lst.append(cosine(mu, glad.wordvec[i]))
-
-
-
-s = sorted(range(len(lst)),key=lambda x:lst[x], reverse = True)
-
-for i in range(10):
-	print glad.id_word[s[i]]
-
 '''
 
 class GLDA:
@@ -128,9 +111,9 @@ class GLDA:
 		self.summary = []
 		self.variance = []
 		self.average = []
-		self.first_part = []
+
 		for i in range(self.T):
-			mu, sigma, kappa, nu, summary, variance, average, first_part = self.init_topic(i)
+			mu, sigma, kappa, nu, summary, variance, average = self.init_topic(i)
 			self.mu.append(mu)
 			self.sigma.append(sigma)
 			self.kappa.append(kappa)
@@ -138,7 +121,6 @@ class GLDA:
 			self.summary.append(summary)
 			self.variance.append(variance)
 			self.average.append(average)
-			self.first_part.append(first_part)
 		self.mu = numpy.array(self.mu)
 		self.sigma = numpy.array(self.sigma)
 		self.nu = numpy.array(self.nu)
@@ -146,7 +128,7 @@ class GLDA:
 		self.summary = numpy.array(self.summary)
 		self.variance = numpy.array(self.variance)
 		self.average = numpy.array(self.average)
-		self.first_part = numpy.array(self.first_part)
+
 
 
 
@@ -160,15 +142,9 @@ class GLDA:
 		variance = numpy.dot(times, (word_vec - average) ** 2)
 		kappa = self.Kappa + total_time
 		nu = self.Nu + total_time
-
-		mu = (self.Kappa * self.Mu + summary) / kappa
-
-		temp = 	(self.Nu * (self.Sigma) + variance + \
-			total_time * self.Kappa / (kappa) * (self.Mu - average)**2 ) / nu
-		sigma = temp ** (0.5)
-		first_part = self.D * (gamln((nu + 1) / 2) - gamln(nu / 2) - numpy.log(nu) / 2)
-
-		return mu, sigma, kappa, nu, summary, variance, average, first_part
+		mu = self.cal_mu(kappa, summary)
+		sigma = self.cal_sigma(kappa, variance, total_time, average, nu)
+		return mu, sigma, kappa, nu, summary, variance, average
 
 
 	'''
@@ -180,9 +156,8 @@ class GLDA:
 
 
 	def cal_sigma(self, kappa, variance, total_time, average, nu):
-		temp = 	(self.Nu * (self.Sigma) + variance + \
-			total_time * self.Kappa / (kappa) * (self.Mu - average)**2 ) / nu
-		return temp ** (0.5)
+		return (self.Nu * (self.Sigma) + variance + \
+			total_time * self.Kappa / (kappa) * (self.Mu - average)**2 )
 
 
 	def update_topic(self, z, t, flag):
@@ -195,8 +170,7 @@ class GLDA:
 			self.variance[z] -= (vec - temp_average) * (vec - self.average[z])
 			self.nu[z] -= 1
 			self.kappa[z] -= 1
-			self.first_part[z] = self.D * (gamln((self.nu[z] + 1) / 2.0) - \
-						gamln(self.nu[z] / 2.0) - numpy.log(self.nu[z]) / 2.0)
+
 		else:
                         self.summary[z] += vec
 			temp_average = self.average[z]
@@ -204,73 +178,55 @@ class GLDA:
                         self.variance[z] += (vec - temp_average) * (vec - self.average[z])
                         self.nu[z] += 1
                         self.kappa[z] += 1
-			self.first_part[z] = self.D * (gamln((self.nu[z] + 1) / 2.0) - \
-							gamln(self.nu[z] / 2.0) - numpy.log(self.nu[z]) / 2.0)
+
 		self.mu[z] = self.cal_mu(self.kappa[z], self.summary[z])
 		self.sigma[z] = self.cal_sigma(self.kappa[z], self.variance[z], total_time, self.average[z], self.nu[z])		
 
-
-	'''
-	from G_LDA_1 import *
-	T = 10
-	D = 300
-	alpha = 0.001 #numpy.array([0.001] * T) 
-	K = 1.0
-	MU = 0.0 #numpy.array([0.0] * D)
-	NU = 1.0
-	SIGMA = 0.1 #numpy.array([0.1] * D)
-
-	wordvec_file = 'toy_word2vec'
-	corpus_file = 'summary_doc'
-	glad = GLDA(T, alpha, K, NU, MU, SIGMA, D)
-	glad.load_wordvec(wordvec_file)
-	glad.load_corpus(corpus_file)
-	glad.set_corpus()
-
-
-
-	'''
 
 	def test_likelihood(self, x):
 		total = []
 		for z in range(self.T):
 			vec = x
 			mu = self.mu[z]
-			sigma = self.sigma[z]
+			sigma = self.sigma[z] ** 0.5
 			nu = self.nu[z]
 			kappa = self.kappa[z]
 			test = []
-			print mu
-			print sigma
-			print x
 			for i in range(self.D):
-				print x[i]
-				print nu
-				print mu[i]
-				print sigma[i]
 				test.append(student_t.pdf(x[i], nu, mu[i], (kappa + 1) / kappa * sigma[i]))
 			total.append(test)
 		total = numpy.log(total)
 		return total.sum(axis = 1)
 
 
+	def test(glad, x):
+		total = []
+		for z in range(glad.T):
+			mu = glad.mu[z]
+			nu = glad.nu[z]
+			sigma = (glad.sigma[z] / nu) ** 0.5
+			kappa = glad.kappa[z]
+			test = []
+			#test.append(student_t.pdf(x, nu, mu, (kappa + 1) / kappa * sigma))
+			for i in range(glad.D):
+				#print student_t.pdf(x[i], nu, mu[i], (kappa + 1) / kappa * sigma[i])
+				#print student_t.logpdf(x[i], nu, mu[i], (kappa + 1) / kappa * sigma[i])
+				#print '============================='
+				test.append(student_t.logpdf(x[i], nu, mu[i], (kappa + 1) / kappa * sigma[i]))
+			total.append(test)
+		return numpy.array(total)
+		return total.sum(axis = 1)
+
 
 	#@profile
 	def gassian_likelihood(self, x):
-		#print x
-		#print x
-		#print x
-		temp = (1 + self.nu[:, numpy.newaxis]) / -2 * \
-			numpy.log(1 + \
-			(self.kappa  / ((self.kappa + 1) * self.nu))[:, numpy.newaxis] \
-			* ((x - self.mu) / self.sigma)** 2)
-		second_part = temp.sum(axis = 1)
-		third_part = self.sigma.sum(axis = 1)
-		temp = self.first_part + second_part - third_part
-		temp -= temp.max()
-		#print 'temp   ', temp
-		#print 'test   ', self.test_likelihood(x)
-		return numpy.exp(temp)
+		first = (gamln((self.nu + 1) / 2) - gamln(self.nu / 2))[:, numpy.newaxis]
+		second = numpy.log(self.kappa / (self.kappa + 1))[:, numpy.newaxis] - numpy.log(self.sigma)
+		third = numpy.log(1 + ((self.kappa) / (self.kappa + 1))[:, numpy.newaxis] * ((x - self.mu) ** 2) / self.sigma)
+		likelihood = first + 0.5 * second - (self.nu + 1)[:, numpy.newaxis] * third * 0.5
+		log_sum = likelihood.sum(axis = 1)
+		log_sum -= log_sum.max()
+		return numpy.exp(log_sum)
 
 
 	#@profile
@@ -287,15 +243,9 @@ class GLDA:
 				vec = self.wordvec[t]
 
 				self.update_topic(z, t, '-')
-				#print '=================='
 				word_topic = self.gassian_likelihood(vec)
-				#return # !!!!!!!!!!!!!!!!!!!
 				topic_document =  self.n_m_z[m] + self.alpha
 				p_z = word_topic * topic_document
-				#print 'word_topic', word_topic
-				#print 'topic_document', topic_document
-				#print 'p_z', p_z
-				#print '=================='
 				new_z = numpy.random.multinomial(1, p_z / p_z.sum()).argmax()
 				self.z_m_n[m][n] = new_z
                                 self.n_m_z[m, new_z] += 1
@@ -308,8 +258,6 @@ class GLDA:
 
 
         def phi(self):
-                #V = len(self.word_id)
-                #return (self.n_z_t + self.beta) / (self.n_z[:, numpy.newaxis] +  V * self.beta)
 		return self.n_z_t / self.n_z[:, numpy.newaxis]
 
 
